@@ -1,7 +1,6 @@
-(function () {
+  (function () {
   'use strict';
 
-  // Акуратно зливаємо конфіг, якщо він заданий інлайн
   const cfg = (function ensureConfig() {
     const defaults = {
       debug: false,
@@ -23,21 +22,6 @@
     return window.GenderReplacer;
   })();
 
-  // Фільтр логів — показуємо лише якщо cfg.debug = true
-  (function installLogFilter() {
-    const originalLog = console.log.bind(console);
-    console.log = function (...args) {
-      try {
-        const first = args[0];
-        if (typeof first === 'string' && first.startsWith('[GenderReplacer]')) {
-          if (cfg.debug) return originalLog(...args);
-          return;
-        }
-      } catch (_) {}
-      return originalLog(...args);
-    };
-  })();
-
   const API = window.GenderReplacer;
 
   // Внутрішній стан
@@ -50,86 +34,71 @@
   API.quickCheckId = null;
   API.intervalId = null;
   API.mainObserver = null;
-  API.attributeObserver = null;
-  API.textObserver = null;
 
   // ------------------------ Службові функції ------------------------
   API.isUserDataReady = function () {
-    if (!window.UserVariables2 || !window.UserVariables2.data) return false;
-    const data = window.UserVariables2.data;
-    if (typeof data !== 'object' || data === null) return false;
-    return ('gender' in data) || ('fullname' in data) || ('id' in data);
-  };
-
-  API.extractGenderFromDOM = function () {
-    try {
-      const genderKeywords = {
-        female: ['жінка', 'женщина', 'woman', 'female'],
-        male:   ['чоловік', 'мужчина', 'man', 'male']
-      };
-      const bodyText = (document.body.textContent || '').toLowerCase();
-
-      for (const [gender, words] of Object.entries(genderKeywords)) {
-        for (const w of words) {
-          if (bodyText.includes(w)) {
-            return gender;
-          }
+    // Шукаємо правильні об’єкти
+    const sources = [
+      window.UserVariables?.data,
+      window.UserVariables2?.data,
+      window.userData
+    ];
+    
+    for (const data of sources) {
+      if (data && typeof data === 'object') {
+        // Шукаємо правильні поля
+        if ('gender' in data || 'user_firstname' in data || 'firstname' in data || 'user_id' in data) {
+          return true;
         }
       }
-      return null;
-    } catch (e) {
-      console.error('[GenderReplacer] Помилка при визначенні статі з DOM:', e);
-      return null;
     }
+    return false;
   };
 
   API.getUserGender = function () {
-    let gender = null;
+    // Множинні джерела даних
+    const sources = [
+      window.UserVariables?.data,
+      window.UserVariables2?.data,
+      window.userData
+    ];
 
-    if (API.isUserDataReady()) {
-      const d = window.UserVariables2.data;
-      for (const val of [d.gender, d.sex, d.Gender, d.Sex, d.user_gender, d.userGender]) {
-        if (!val) continue;
-        gender = String(val).toLowerCase().trim();
-        if (['жінка','женщина','woman','female','f'].includes(gender)) return 'female';
-        if (['чоловік','мужчина','man','male','m'].includes(gender))   return 'male';
-      }
-      const fromDom = API.extractGenderFromDOM();
-      if (fromDom) return fromDom;
-    }
-
-    if (window.userData?.gender) {
-      gender = String(window.userData.gender).toLowerCase().trim();
-      if (gender) return gender;
-    }
-
-    try {
-      const s = localStorage.getItem('userData') || localStorage.getItem('userGender');
-      if (s) {
-        const v = JSON.parse(s);
-        gender = String(v.gender ?? v).toLowerCase().trim();
-        if (gender) return gender;
-      }
-    } catch {}
-
-    try {
-      const s = sessionStorage.getItem('userData') || sessionStorage.getItem('userGender');
-      if (s) {
-        const v = JSON.parse(s);
-        gender = String(v.gender ?? v).toLowerCase().trim();
-        if (gender) return gender;
-      }
-    } catch {}
-
-    if (window.Runtime?.getProgress) {
-      try {
-        const p = window.Runtime.getProgress();
-        if (p?.userGender) {
-          gender = String(p.userGender).toLowerCase().trim();
-          if (gender) return gender;
+    for (const data of sources) {
+      if (!data || typeof data !== 'object') continue;
+      
+      // Пряме вказання статі
+      for (const field of ['gender', 'sex', 'user_gender', 'userGender']) {
+        if (data[field]) {
+          const val = String(data[field]).toLowerCase().trim();
+          if (['жінка','женщина','woman','female','f'].includes(val)) return 'female';
+          if (['чоловік','мужчина','man','male','m'].includes(val)) return 'male';
         }
-      } catch {}
+      }
+
+      // Визначення статі за ім’ям 
+      const name = data.user_firstname || data.firstname || data.fullname || data.name || '';
+      if (name && typeof name === 'string') {
+        const n = name.toLowerCase().trim();
+        // Українські жіночі імена часто закінчуються на 'а', 'я', 'ія'
+        if (n.match(/[ая]$|ія$/)) return 'female';
+        // Чоловічі закінчення
+        if (n.match(/[ийо]й$|[ьл]$/)) return 'male';
+      }
     }
+
+    // Пошук у DOM як резерв
+    try {
+      const bodyText = (document.body.textContent || '').toLowerCase();
+      const femaleWords = ['жінка', 'женщина', 'woman', 'female'];
+      const maleWords = ['чоловік', 'мужчина', 'man', 'male'];
+      
+      for (const word of femaleWords) {
+        if (bodyText.includes(word)) return 'female';
+      }
+      for (const word of maleWords) {
+        if (bodyText.includes(word)) return 'male';
+      }
+    } catch (e) {}
 
     return null;
   };
@@ -157,7 +126,7 @@
     return found;
   };
 
-  // ------------------------ Замiни в текстових вузлах ------------------------
+  // ------------------------ Заміни в текстових вузлах ------------------------
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
   API.processBlock = function (block, blockId) {
@@ -194,6 +163,10 @@
         }
       });
 
+      if (cfg.debug && total > 0) {
+        console.log(`[GenderReplacer] Блок ${blockId}: ${total} замін`);
+      }
+
       return total;
     } catch (e) {
       console.error(`[GenderReplacer] Помилка в блоці ${blockId}:`, e);
@@ -215,9 +188,16 @@
   // ------------------------ Основна обробка ------------------------
   API.processAllBlocks = function () {
     try {
-      if (!API.isUserDataReady()) return;
+      if (!API.isUserDataReady()) {
+        if (cfg.debug) console.log('[GenderReplacer] Дані користувача ще не готові');
+        return;
+      }
+      
       const gender = API.getUserGender();
-      if (gender !== 'female') return;
+      if (gender !== 'female') {
+        if (cfg.debug) console.log(`[GenderReplacer] Стать "${gender}" - заміни не потрібні`);
+        return;
+      }
 
       const found = API.findAllTargetBlocks();
       const signature = API.computeSignature(gender, found);
@@ -226,26 +206,35 @@
         if (API._stableChecks >= API._stableThreshold && API.intervalId) {
           clearInterval(API.intervalId);
           API.intervalId = null;
+          if (cfg.debug) console.log('[GenderReplacer] Стабільний стан досягнуто, зупиняю інтервал');
         }
         return;
       }
       API._lastSignature = signature;
       API._stableChecks = 0;
 
-      if (found.size === 0) return;
+      if (found.size === 0) {
+        if (cfg.debug) console.log('[GenderReplacer] Цільові блоки не знайдено:', API.targetBlocks);
+        return;
+      }
 
+      let totalReplacements = 0;
       found.forEach((elements, blockId) => {
         elements.forEach((el, i) => {
-          API.processBlock(el, `${blockId}[${i}]`);
+          totalReplacements += API.processBlock(el, `${blockId}[${i}]`);
         });
       });
+
+      if (cfg.debug) {
+        console.log(`[GenderReplacer] Загалом замін: ${totalReplacements} в ${found.size} блоках`);
+      }
 
     } catch (e) {
       console.error('[GenderReplacer] Критична помилка при обробці блоків:', e);
     }
   };
 
-  // ------------------------ Наглядачі та події ------------------------
+  // ------------------------ Спостерігачі та події ------------------------
   API.handleMutations = function (mutations) {
     let shouldProcess = false;
 
@@ -263,30 +252,38 @@
     if (shouldProcess) setTimeout(() => API.processAllBlocks(), 150);
   };
 
-  API.startRiseSpecificObserver = function () {
+  API.startObserver = function () {
+    if (API.mainObserver) return;
+    
+    API.mainObserver = new MutationObserver(m => API.handleMutations(m));
+    API.mainObserver.observe(document.documentElement, { 
+      childList: true, 
+      subtree: true, 
+      characterData: true // Для відстеження змін тексту
+    });
+
+    // Специфічні спостерігачі для Rise
     ['#app', '.rise-player', '[data-rise]', '.course-container'].forEach(sel => {
       const c = document.querySelector(sel);
-      if (!c) return;
-      const o = new MutationObserver(m => API.handleMutations(m));
-      o.observe(c, { childList: true, subtree: true, attributes: true, characterData: true });
+      if (c && !c._genderObserver) {
+        const o = new MutationObserver(m => API.handleMutations(m));
+        o.observe(c, { childList: true, subtree: true, attributes: true, characterData: true });
+        c._genderObserver = o;
+      }
     });
   };
 
-  API.startObserver = function () {
-    API.mainObserver = new MutationObserver(m => API.handleMutations(m));
-    API.attributeObserver = new MutationObserver(m => API.handleMutations(m));
-    API.textObserver = new MutationObserver(m => API.handleMutations(m));
-
-    API.mainObserver.observe(document.documentElement, { childList: true, subtree: true });
-    API.attributeObserver.observe(document.documentElement, { subtree: true, attributes: true });
-    API.textObserver.observe(document.documentElement, { subtree: true, characterData: true });
-
-    API.startRiseSpecificObserver();
-  };
-
   API.startPeriodicCheck = function () {
+    // Швидка перевірка перші 10 секунд
     API.quickCheckId = setInterval(() => API.processAllBlocks(), 1000);
-    setTimeout(() => { if (API.quickCheckId) { clearInterval(API.quickCheckId); } }, 10000);
+    setTimeout(() => { 
+      if (API.quickCheckId) { 
+        clearInterval(API.quickCheckId); 
+        API.quickCheckId = null;
+      } 
+    }, 10000);
+    
+    // Основний інтервал
     API.intervalId = setInterval(() => API.processAllBlocks(), 2000);
   };
 
@@ -297,41 +294,61 @@
       setTimeout(() => API.processAllBlocks(), 100);
     }
   };
+  
   API.addReplacement = function (male, female) {
     API.genderReplacements.female[male] = female;
   };
-  API.forceProcess = function () { API.processAllBlocks(); };
+  
+  API.forceProcess = function () { 
+    if (cfg.debug) console.log('[GenderReplacer] Примусова обробка...');
+    API.processAllBlocks(); 
+  };
+  
   API.stop = function () {
     API.mainObserver?.disconnect();
-    API.attributeObserver?.disconnect();
-    API.textObserver?.disconnect();
     if (API.quickCheckId) clearInterval(API.quickCheckId);
-    if (API.intervalId)   clearInterval(API.intervalId);
+    if (API.intervalId) clearInterval(API.intervalId);
   };
 
   // ------------------------ Ініціалізація ------------------------
   API.init = function () {
+    if (cfg.debug) console.log('[GenderReplacer] Ініціалізація...');
     API.startObserver();
     API.startPeriodicCheck();
-    API.processAllBlocks();
+    setTimeout(() => API.processAllBlocks(), 500);
   };
 
-  // Автозапуск
-  setTimeout(() => {
-    API.init();
-    setTimeout(() => {
-      const body = document.body.textContent || '';
-      if (body.includes('Жінка')) { window.UserVariables2 ??= {}; (window.UserVariables2.data ??= {}).gender = 'female'; API.forceProcess(); }
-      if (body.includes('Чоловік') || body.includes('Мужчина')) { window.UserVariables2 ??= {}; (window.UserVariables2.data ??= {}).gender = 'male'; API.forceProcess(); }
-    }, 500);
-    setTimeout(() => API.forceProcess(), 3000);
-    setTimeout(() => API.forceProcess(), 5000);
-  }, 100);
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(() => API.forceProcess(), 300));
-  } else {
-    setTimeout(() => API.forceProcess(), 300);
+  // Чекаємо готовності UserVariables, потім запускаємо
+  function waitForUserDataAndInit() {
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    const checkAndInit = () => {
+      attempts++;
+      
+      if (API.isUserDataReady()) {
+        API.init();
+        return;
+      }
+      
+      if (attempts >= maxAttempts) {
+        if (cfg.debug) console.log('[GenderReplacer] Таймаут очікування даних користувача, запускаю без них');
+        API.init();
+        return;
+      }
+      
+      setTimeout(checkAndInit, 500);
+    };
+    
+    checkAndInit();
   }
-  window.addEventListener('load', () => setTimeout(() => API.forceProcess(), 500));
+
+  // Автозапуск
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(waitForUserDataAndInit, 100));
+  } else {
+    setTimeout(waitForUserDataAndInit, 100);
+  }
+
 })();
+
