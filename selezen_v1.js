@@ -34,6 +34,9 @@
   API.quickCheckId = null;
   API.intervalId = null;
   API.mainObserver = null;
+  API.processTimer = null;
+  API.processingTimer = null;
+  API.shadowObservers = new Map();
 
   // ------------------------ Службові функції ------------------------
   API.isUserDataReady = function () {
@@ -47,7 +50,7 @@
     for (const data of sources) {
       if (data && typeof data === 'object') {
         // Шукаємо правильні поля
-        if ('gender' in data || 'user_firstname' in data || 'firstname' in data || 'user_id' in data) {
+        if ('gender' in data || 'user_gender' in data || 'user_firstname' in data || 'firstname' in data || 'user_id' in data) {
           return true;
         }
       }
@@ -104,24 +107,45 @@
   };
 
   // ------------------------ Пошук цільових блоків ------------------------
+  API.getShadowRoots = function (rootNode = document.documentElement) {
+    const roots = [];
+
+    const visit = (root) => {
+      if (!root || typeof root.querySelectorAll !== 'function') return;
+      root.querySelectorAll('*').forEach(element => {
+        if (element.shadowRoot) {
+          roots.push(element.shadowRoot);
+          visit(element.shadowRoot);
+        }
+      });
+    };
+
+    visit(rootNode);
+    return roots;
+  };
+
   API.findAllTargetBlocks = function () {
     const found = new Map();
+    const roots = [document, ...API.getShadowRoots()];
+
     API.targetBlocks.forEach(blockId => {
-      let els = document.querySelectorAll(`[data-block-id="${blockId}"]`);
-      if (els.length === 0) {
-        const altSelectors = [
-          `[data-blockid="${blockId}"]`,
-          `[data-block="${blockId}"]`,
-          `[blockid="${blockId}"]`,
-          `[id="${blockId}"]`,
-          `[data-id="${blockId}"]`,
-        ];
-        for (const sel of altSelectors) {
-          const alt = document.querySelectorAll(sel);
-          if (alt.length) { els = alt; break; }
+      const selectors = [
+        `[data-block-id="${blockId}"]`,
+        `[data-blockid="${blockId}"]`,
+        `[data-block="${blockId}"]`,
+        `[blockid="${blockId}"]`,
+        `[id="${blockId}"]`,
+        `[data-id="${blockId}"]`,
+      ];
+      const elements = new Set();
+
+      for (const root of roots) {
+        for (const selector of selectors) {
+          root.querySelectorAll(selector).forEach(element => elements.add(element));
         }
       }
-      if (els.length) found.set(blockId, Array.from(els));
+
+      if (elements.size) found.set(blockId, Array.from(elements));
     });
     return found;
   };
@@ -129,39 +153,65 @@
   // ------------------------ Заміни в текстових вузлах ------------------------
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+  API.observeShadowRoot = function (rootNode) {
+    if (API.shadowObservers.has(rootNode)) return;
+
+    const observer = new MutationObserver(() => API.scheduleProcessing());
+    observer.observe(rootNode, { childList: true, subtree: true, characterData: true });
+    API.shadowObservers.set(rootNode, observer);
+  };
+
   API.processBlock = function (block, blockId) {
     try {
       const replacements = API.genderReplacements.female || {};
-      const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false);
-      const textNodes = [];
-      let node;
-      while ((node = walker.nextNode())) textNodes.push(node);
-
       let total = 0;
 
-      textNodes.forEach((tn) => {
-        const original = tn.nodeValue;
-        let txt = original;
-        let repl = 0;
+      const processRoot = (rootNode) => {
+        const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode())) textNodes.push(node);
 
-        for (const [male, female] of Object.entries(replacements)) {
-          const esc = escapeRegex(male);
-          if (API._supportsLookbehind) {
-            const re = new RegExp(`(?<![\\p{L}\\p{M}])${esc}(?![\\p{L}\\p{M}])`, 'giu');
-            const m = txt.match(re);
-            if (m) { txt = txt.replace(re, female); repl += m.length; }
-          } else {
-            const re = new RegExp(`(^|[^\\p{L}\\p{M}])(${esc})(?=([^\\p{L}\\p{M}]|$))`, 'giu');
-            const m = txt.match(re);
-            if (m) { txt = txt.replace(re, (_, p) => `${p || ''}${female}`); repl += m.length; }
+        textNodes.forEach((tn) => {
+          const original = tn.nodeValue;
+          let txt = original;
+          let repl = 0;
+
+          for (const [male, female] of Object.entries(replacements)) {
+            const esc = escapeRegex(male);
+            if (API._supportsLookbehind) {
+              const re = new RegExp(`(?<![\\p{L}\\p{M}])${esc}(?![\\p{L}\\p{M}])`, 'giu');
+              const m = txt.match(re);
+              if (m) { txt = txt.replace(re, female); repl += m.length; }
+            } else {
+              const re = new RegExp(`(^|[^\\p{L}\\p{M}])(${esc})(?=([^\\p{L}\\p{M}]|$))`, 'giu');
+              const m = txt.match(re);
+              if (m) { txt = txt.replace(re, (_, p) => `${p || ''}${female}`); repl += m.length; }
+            }
           }
+
+          if (txt !== original) {
+            tn.nodeValue = txt;
+            total += repl;
+          }
+        });
+
+        if (rootNode.shadowRoot) {
+          API.observeShadowRoot(rootNode.shadowRoot);
+          processRoot(rootNode.shadowRoot);
         }
 
-        if (txt !== original) {
-          tn.nodeValue = txt;
-          total += repl;
+        if (typeof rootNode.querySelectorAll === 'function') {
+          rootNode.querySelectorAll('*').forEach(element => {
+            if (element.shadowRoot) {
+              API.observeShadowRoot(element.shadowRoot);
+              processRoot(element.shadowRoot);
+            }
+          });
         }
-      });
+      };
+
+      processRoot(block);
 
       if (cfg.debug && total > 0) {
         console.log(`[GenderReplacer] Блок ${blockId}: ${total} замін`);
@@ -178,11 +228,27 @@
     try {
       const parts = [`g:${gender}`];
       foundBlocks.forEach((elements, blockId) => {
-        const lens = elements.map(el => (el.textContent || '').length).join(',');
+        const lens = elements.map(el => API.getBlockText(el).length).join(',');
         parts.push(`${blockId}:${lens}`);
       });
       return parts.join('|');
     } catch { return String(Date.now()); }
+  };
+
+  API.getBlockText = function (rootNode) {
+    let text = rootNode.textContent || '';
+
+    if (rootNode.shadowRoot) {
+      text += API.getBlockText(rootNode.shadowRoot);
+    }
+
+    if (typeof rootNode.querySelectorAll === 'function') {
+      rootNode.querySelectorAll('*').forEach(element => {
+        if (element.shadowRoot) text += API.getBlockText(element.shadowRoot);
+      });
+    }
+
+    return text;
   };
 
   // ------------------------ Основна обробка ------------------------
@@ -198,6 +264,8 @@
         if (cfg.debug) console.log(`[GenderReplacer] Стать "${gender}" - заміни не потрібні`);
         return;
       }
+
+      API.getShadowRoots().forEach(API.observeShadowRoot);
 
       const found = API.findAllTargetBlocks();
       const signature = API.computeSignature(gender, found);
@@ -242,14 +310,35 @@
       if (m.addedNodes) {
         for (const n of m.addedNodes) {
           if (n.nodeType === 1) {
-            if (n.hasAttribute?.('data-block-id')) shouldProcess = true;
+            shouldProcess = true;
           }
         }
       }
       if (m.type === 'characterData') shouldProcess = true;
     }
 
-    if (shouldProcess) setTimeout(() => API.processAllBlocks(), 150);
+    if (shouldProcess) {
+      if (API.processTimer) clearTimeout(API.processTimer);
+      API.processTimer = setTimeout(() => API.scheduleProcessing(), 150);
+    }
+  };
+
+  API.scheduleProcessing = function () {
+    if (API.processingTimer) clearTimeout(API.processingTimer);
+
+    let attempts = 0;
+    const process = () => {
+      API.processAllBlocks();
+      attempts += 1;
+
+      if (attempts < 12) {
+        API.processingTimer = setTimeout(process, 250);
+      } else {
+        API.processingTimer = null;
+      }
+    };
+
+    process();
   };
 
   API.startObserver = function () {
@@ -261,6 +350,8 @@
       subtree: true, 
       characterData: true // Для відстеження змін тексту
     });
+
+    API.scheduleProcessing();
 
     // Специфічні спостерігачі для Rise
     ['#app', '.rise-player', '[data-rise]', '.course-container'].forEach(sel => {
@@ -308,6 +399,10 @@
     API.mainObserver?.disconnect();
     if (API.quickCheckId) clearInterval(API.quickCheckId);
     if (API.intervalId) clearInterval(API.intervalId);
+    if (API.processTimer) clearTimeout(API.processTimer);
+    if (API.processingTimer) clearTimeout(API.processingTimer);
+    API.shadowObservers.forEach(observer => observer.disconnect());
+    API.shadowObservers.clear();
   };
 
   // ------------------------ Ініціалізація ------------------------
@@ -351,4 +446,3 @@
   }
 
 })();
-
