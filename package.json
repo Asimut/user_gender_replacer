@@ -1,0 +1,36 @@
+{
+  "name": "asimut-user-gender-replacer",
+  "version": "1.0.0",
+  "description": "Скрипт для заміни слів і фраз у курсах Articulate Rise в LMS Collaborator з урахуванням статі користувача.",
+  "main": "selezen_v1.js",
+  "browser": "selezen_v1.js",
+  "files": [
+    "selezen_v1.js"
+  ],
+  "scripts": {
+    "check": "node --check selezen_v1.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Asimut/user_gender_replacer.git"
+  },
+  "homepage": "https://github.com/Asimut/user_gender_replacer#readme",
+  "bugs": {
+    "url": "https://github.com/Asimut/user_gender_replacer/issues"
+  },
+  "keywords": [
+    "lms",
+    "scorm",
+    "articulate-rise",
+    "gender",
+    "text-replacement"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "author": {
+    "name": "Oleh Selezen",
+    "url": "https://github.com/Asimut"
+  }
+}
