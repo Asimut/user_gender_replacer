@@ -1,3 +1,4 @@
+// Created by Oleh Selezen
   (function () {
   'use strict';
 

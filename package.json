@@ -1,6 +1,6 @@
 {
   "name": "asimut-user-gender-replacer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Скрипт для заміни слів і фраз у курсах Articulate Rise в LMS Collaborator з урахуванням статі користувача.",
   "main": "selezen_v1.js",
   "browser": "selezen_v1.js",

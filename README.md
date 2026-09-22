@@ -2,7 +2,7 @@
 
 Я створив цей скрипт для адаптації тексту курсів Articulate Rise у **LMS Collaborator** з урахуванням статі користувача. Він замінює задані слова й фрази, знаходить блоки в DOM і відкритих Shadow DOM та обробляє текст, який додається динамічно.
 
-Опублікував пакет [asimut-user-gender-replacer@1.0.0](https://www.npmjs.com/package/asimut-user-gender-replacer/v/1.0.0). Підключення через LMS Collaborator погоджую окремо: спочатку команда перевіряє та встановлює пакет, а після підтвердження адреси файлу я оновлюю курс. Для інших LMS сумісність потрібно перевіряти окремо.
+Опублікував пакет [asimut-user-gender-replacer@1.0.1](https://www.npmjs.com/package/asimut-user-gender-replacer/v/1.0.1). Підключення через LMS Collaborator погоджую окремо: спочатку команда перевіряє та встановлює пакет, а після підтвердження адреси файлу я оновлюю курс. Для інших LMS сумісність потрібно перевіряти окремо.
 
 ## Що робить скрипт
 
@@ -22,7 +22,7 @@
 Для встановлення опублікованої версії передаю команді Collaborator таку команду:
 
 ```sh
-npm install --save-exact --ignore-scripts asimut-user-gender-replacer@1.0.0
+npm install --save-exact --ignore-scripts asimut-user-gender-replacer@1.0.1
 ```
 
 Браузерний файл встановлюється до:

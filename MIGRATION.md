@@ -2,7 +2,7 @@
 
 Я опублікував свій скрипт у npm, щоб його можна було підключати в курсах Articulate Rise через **LMS Collaborator**. Робочий JavaScript під час перенесення залишив без змін.
 
-- npm: [asimut-user-gender-replacer@1.0.0](https://www.npmjs.com/package/asimut-user-gender-replacer/v/1.0.0)
+- npm: [asimut-user-gender-replacer@1.0.1](https://www.npmjs.com/package/asimut-user-gender-replacer/v/1.0.1)
 - GitHub: [Asimut/user_gender_replacer](https://github.com/Asimut/user_gender_replacer)
 - Браузерний файл: `selezen_v1.js`
 
@@ -19,7 +19,7 @@ User Variables отримує дані користувача через SCORM A
 Команда встановлення обох пакетів для команди Collaborator:
 
 ```sh
-npm install --save-exact --ignore-scripts asimut-user-variables@1.0.0 asimut-user-gender-replacer@1.0.0
+npm install --save-exact --ignore-scripts asimut-user-variables@1.0.0 asimut-user-gender-replacer@1.0.1
 ```
 
 Файли після встановлення:
